@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reply Bot API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        .error {
+            color: red;
+        }
+        .success {
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <h1>Reply Bot API Test</h1>
+    
+    <div class="card">
+        <h2>Test Request</h2>
+        <pre id="request-data">
+{
+  "original": {
+    "username": "urban_explorer22",
+    "text": "Caught the city skyline from the rooftop lounge tonight—could use a partner in crime for the next late-night adventure 😏"
+  },
+  "target": {
+    "username": "city_siren",
+    "text": "Count me in! I know a hidden speakeasy with your name on it 🥂 #RooftopRomance"
+  },
+  "history": []
+}
+        </pre>
+        <button id="send-request">Send Request</button>
+    </div>
+    
+    <div class="card">
+        <h2>Response</h2>
+        <div id="response-box">
+            <p>No response yet. Click "Send Request" to test the API.</p>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('send-request').addEventListener('click', async function() {
+            const responseBox = document.getElementById('response-box');
+            responseBox.innerHTML = '<p class="loading">Loading response...</p>';
+            
+            try {
+                const requestData = JSON.parse(document.getElementById('request-data').textContent);
+                
+                const response = await fetch('http://localhost:8000/generate-reply', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                responseBox.innerHTML = `
+                    <p class="success">Success! Status: ${response.status}</p>
+                    <h3>Generated Reply:</h3>
+                    <p style="font-size: 18px; padding: 10px; background-color: #e8f5e9; border-radius: 5px;">${data.reply}</p>
+                    <h3>Full Response:</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                responseBox.innerHTML = `
+                    <p class="error">Error: ${error.message}</p>
+                    <p>Check your console for more details and make sure the server is running.</p>
+                `;
+                console.error('Error:', error);
+            }
+        });
+    </script>
+</body>
+</html> 
