@@ -1,53 +1,55 @@
 import logging
 import json
+
 from fastapi import APIRouter, HTTPException
-from app.services.reply import make_reply, sanitize_log_message
 from pydantic import BaseModel
+from celery.result import AsyncResult
 
-# Get a logger for this module
+from celery_app import celery_app
+from app.celery_tasks import generate_reply_task
+from app.services.reply import sanitize_log_message
+
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 class ReplyRequest(BaseModel):
     original: dict
-    target: dict
-    history: list = []
+    target:   dict
+    history:  list = []
 
 @router.post("/generate-reply")
-async def generate_reply(request: ReplyRequest):
-    logger.info("Received generate-reply request")
-    try:
-        # Log the entire request for debugging, but sanitize it first
-        safe_request = sanitize_log_message(request.dict())
-        logger.debug(f"Request data (sanitized): {json.dumps(safe_request, indent=2)}")
-        
-        # Check if text fields exist and have content
-        orig_text = request.original.get('text', '')
-        target_text = request.target.get('text', '')
-        
-        logger.debug(f"Original text length: {len(orig_text)}")
-        logger.debug(f"Target text length: {len(target_text)}")
-        
-        if not orig_text:
-            logger.warning("Original text is empty!")
-        if not target_text:
-            logger.warning("Target text is empty!")
-        
-        reply = await make_reply({
-            "original": request.original,
-            "target": request.target,
-            "history": request.history,
-            "postId": "system-generated"
-        })
-        
-        # Log a truncated version of the reply
-        if reply:
-            logger.info(f"Generated reply (truncated): '{reply[:15]}...'")
-        else:
-            logger.warning("Empty reply generated")
-            
-        return {"reply": reply}
-    except Exception as e:
-        logger.error(f"Error generating reply: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+async def enqueue_reply(request: ReplyRequest):
+    """
+    Enqueue a reply job and return a task_id immediately.
+    """
+    logger.info("Enqueuing generate-reply task")
+    safe = sanitize_log_message(request.dict())
+    logger.debug("Sanitized request:\n%s", json.dumps(safe, indent=2))
+
+    payload = {
+        "original": request.original,
+        "target":   request.target,
+        "history":  request.history,
+        "postId":   "system-generated"
+    }
+
+    task = generate_reply_task.delay(payload)
+    return {"task_id": task.id}
+
+@router.get("/generate-reply/{task_id}")
+async def get_reply(task_id: str):
+    """
+    Poll for the status and result of a previously enqueued task.
+    """
+    res = AsyncResult(task_id, app=celery_app)
+    state = res.state
+
+    if state == "PENDING":
+        return {"status": "pending"}
+    if state == "SUCCESS":
+        return {"status": "done", "reply": res.result}
+    if state == "FAILURE":
+        return {"status": "failure", "error": str(res.result)}
+
+    # Covers states like RETRY
+    return {"status": state}
